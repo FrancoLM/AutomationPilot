@@ -53,6 +53,9 @@ public class CuriosityAPI{
         @Key
         public int sol;
 
+        @Key("img_src")
+        public String imgSrc;
+
         @Key
         public Rover rover;
 
