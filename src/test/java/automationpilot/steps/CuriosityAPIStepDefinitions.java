@@ -13,10 +13,9 @@ import org.testng.Assert;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.List;
-import java.util.ResourceBundle;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 public class CuriosityAPIStepDefinitions {
 
@@ -24,6 +23,7 @@ public class CuriosityAPIStepDefinitions {
     private Date earthDateCalculated;
     private List<CuriosityAPI.Photo> photosBySolDay;
     private List<CuriosityAPI.Photo> photosByEarthDate;
+    private List<CuriosityAPI.Photo> allPhotosBySolDay;
 
 
     @Given("^a NASA API session for Curiosity$")
@@ -48,6 +48,7 @@ public class CuriosityAPIStepDefinitions {
 
         Assert.assertTrue(totalNumberOfPhotos >= numberOfPhotos);
         System.out.println("Retrieved " + totalNumberOfPhotos + " Photos");
+        // TODO: Duplicated code
 
         // Save the first 10 photos
         photosBySolDay = curiosityAPI.photoFeed.photos.subList(0, numberOfPhotos);
@@ -78,7 +79,6 @@ public class CuriosityAPIStepDefinitions {
 
     @When("^I get the first \"([^\"]*)\" pictures made on that earth date$")
     public void i_get_the_first_pictures_made_on_earth_date(int numberOfPhotos) throws Exception {
-        // TODO: I could create a step (I get the first "10" photos made on earth date "1000")
         Assert.assertNotNull(earthDateCalculated, "Error. A date for retrieving the pictures should have been defined");
         String earthDate = new SimpleDateFormat("yyyy-MM-dd").format(earthDateCalculated);
 
@@ -96,6 +96,7 @@ public class CuriosityAPIStepDefinitions {
 
     @Then("^the photos should be the same$")
     public void the_photos_should_be_the_same() throws Exception {
+        // TODO: Compare downloaded images and metadata from API. Test fails in case of any difference.
         // It's possible that if I retrieve the earth date for a given sol, that earth day might have started on the
         // previous sol
 
@@ -105,18 +106,40 @@ public class CuriosityAPIStepDefinitions {
         for (int i = 0; i < photosBySolDay.size(); i++) {
             Assert.assertEquals(photosBySolDay.get(i).id, photosByEarthDate.get(i).id);
         }
+        System.out.println("Photos are the same");
     }
 
     @Given("^I get the all photos made on sol \"([^\"]*)\"$")
-    public void i_get_the_all_photos_made_on_sol(String arg1) throws Exception {
+    public void i_get_the_all_photos_made_on_sol(String daysInSol) throws Exception {
         // Write code here that turns the phrase above into concrete actions
-        System.out.println("DONE");
-        assert true == true;
+        // NOTE: The API does not support a limit for the number of photos retrieved. It does support
+        // pagination, but it's fixed to a maximum of 25 photos
+        curiosityAPI.apiUrl.setSol(daysInSol);
+        curiosityAPI.apiUrl.setEarthDate(null);
+
+        HttpRequest request = curiosityAPI.requestFactory.buildGetRequest(curiosityAPI.apiUrl);
+        curiosityAPI.photoFeed = request.execute().parseAs(CuriosityAPI.PhotoFeed.class);
+        int totalNumberOfPhotos = curiosityAPI.photoFeed.photos.size();
+
+        System.out.println("Retrieved " + totalNumberOfPhotos + " Photos");
+        // TODO: duplicated code
+        allPhotosBySolDay = curiosityAPI.photoFeed.photos;
     }
 
     @Then("^no camera made more than \"([^\"]*)\" photos$")
-    public void no_camera_made_more_than_photos(String arg1) throws Exception {
-        // Write code here that turns the phrase above into concrete actions
-        System.out.println("DONE");
+    public void no_camera_made_more_than_photos(int maxNumberOfPhotosPerCamera) throws Exception {
+        Assert.assertNotNull(allPhotosBySolDay, "Error. There No photo information available to run the test step");
+
+        // Group photos by the camera used to take it
+        HashMap<String, List<CuriosityAPI.CuriosityCamera>> photosGroupedByCamera =
+                (HashMap<String, List<CuriosityAPI.CuriosityCamera>>) allPhotosBySolDay.stream()
+                        .map(CuriosityAPI.Photo::getCamera)
+                        .collect(Collectors.groupingBy(CuriosityAPI.CuriosityCamera::getName));
+
+        // Verify that no camera took more than @maxNumberOfPhotosPerCamera photos
+        for (String cameraName : photosGroupedByCamera.keySet()){
+            Assert.assertTrue(photosGroupedByCamera.get(cameraName).size() < maxNumberOfPhotosPerCamera,
+                    "Error. Camera " + cameraName + " took more than " + maxNumberOfPhotosPerCamera + " photos.");
+        }
     }
 }
